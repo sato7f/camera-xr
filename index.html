@@ -24,6 +24,15 @@
         .val { float: right; color: #fff; }
         hr { border: 0; border-top: 1px solid #444; margin: 10px 0; }
         
+        /* File & Button Area */
+        .input-row { display: flex; gap: 5px; margin-bottom: 10px; }
+        #file-input { width: 70%; }
+        #btn-sample { 
+            width: 30%; background: #333; color: var(--accent-color); 
+            border: 1px solid var(--accent-color); border-radius: 3px; cursor: pointer; font-size: 10px;
+        }
+        #btn-sample:hover { background: var(--accent-color); color: #000; }
+
         /* Webcam Preview */
         #video-container { position: fixed; bottom: 10px; right: 10px; width: 130px; height: 100px; border: 1px solid #444; transform: scaleX(-1); border-radius: 4px; overflow: hidden; z-index: 10; }
         video { width: 100%; height: 100%; object-fit: cover; }
@@ -36,7 +45,11 @@
 
 <div id="ui-panel">
     <div id="status" style="margin-bottom: 10px; color: yellow;">カメラ起動中...</div>
-    <input type="file" id="file-input" accept=".fbx" style="margin-bottom:10px; width:100%;">
+    
+    <div class="input-row">
+        <input type="file" id="file-input" accept=".fbx">
+        <button id="btn-sample">Sample</button>
+    </div>
     
     <div class="control-group"><label>Perspective <span class="val" data-bind="perspective"></span></label><input type="range" id="p-perspective" min="0" max="1500"></div>
     <div class="control-group"><label>Distortion <span class="val" data-bind="distortion"></span></label><input type="range" id="p-distortion" min="0" max="1500"></div>
@@ -47,7 +60,7 @@
     <div class="control-group"><label>Shadow Dir Y <span class="val" data-bind="dirY"></span></label><input type="range" id="p-dirY" min="0" max="1000"></div>
     <hr>
     <div class="control-group"><label>Pos X <span class="val" data-bind="posX"></span></label><input type="range" id="p-posX" min="-500" max="500"></div>
-    <div class="control-group"><label>Pos Y <span class="val" data-bind="posY"></span></label><input type="range" id="p-posY" min="-800" max="200"></div>
+    <div class="control-group"><label>Pos Y <span class="val" data-bind="posY"></span></label><input type="range" id="p-posY" min="-500" max="500"></div>
     <div class="control-group"><label>Model Scale <span class="val" data-bind="scale"></span></label><input type="range" id="p-scale" min="50" max="800"></div>
 </div>
 
@@ -75,7 +88,7 @@
         perspective: 380, distortion: 70, 
         sshiftX: 90, sshiftY: 0, 
         dirX: 170, dirY: 160,
-        posX: 0, posY: -160, 
+        posX: 0, posY: 0, 
         neckRot: 1.2, scale: 365 
     };
 
@@ -105,7 +118,6 @@
             this.renderer.setPixelRatio(window.devicePixelRatio);
             this.renderer.shadowMap.enabled = true;
             this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            // ガンマ補正を有効にして、色味を少し柔らかくする
             this.renderer.outputEncoding = THREE.sRGBEncoding;
             this.container.appendChild(this.renderer.domElement);
 
@@ -115,12 +127,11 @@
 
             this.sunLight = new THREE.DirectionalLight(0xffffff, 1.8);
             this.setupLights();
-            // 環境光を少し強めにして影を柔らかく
             this.charScene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
             this.shadowPlane = new THREE.Mesh(
                 new THREE.PlaneGeometry(3000, 3000),
-                new THREE.ShadowMaterial({ opacity: 0.4 }) // 影の濃さを少し下げる
+                new THREE.ShadowMaterial({ opacity: 0.4 })
             );
             this.shadowPlane.receiveShadow = true;
             this.shadowPlane.position.z = -100;
@@ -208,7 +219,7 @@
     }
 
     // ==========================================
-    // 3. Model Manager (Fixed Jitter & Material)
+    // 3. Model Manager (Includes Sample Generation)
     // ==========================================
     class ModelManager {
         constructor(scene) {
@@ -217,16 +228,42 @@
             this.neckBone = null;
             this.loader = new FBXLoader();
             
-            // 修正1：計算の基準となる初期サイズ情報を保持する変数
             this.baseSize = new THREE.Vector3();
             this.baseCenter = new THREE.Vector3();
             this.baseScale = 1;
         }
 
+        // FBXファイル読み込み
         loadModel(buffer) {
-            if (this.currentModel) this.scene.remove(this.currentModel);
-            
             const object = this.loader.parse(buffer);
+            this.setupObject(object);
+            document.getElementById("status").innerText = "モデル読込完了";
+        }
+
+        // サンプルオブジェクト（トーラス結び目）生成
+        loadSample() {
+            // 複雑な形状を作成して見栄えを良くする
+            // const geometry = new THREE.TorusKnotGeometry(40, 10, 150, 20);
+            const geometry = new THREE.BoxGeometry(30, 30, 100)
+
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0x00fff2,
+                roughness: 1.0,
+                metalness: 0.0 
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // FBXと同じようにGroupに入れて扱う
+            const group = new THREE.Group();
+            group.add(mesh);
+            
+            this.setupObject(group);
+            document.getElementById("status").innerText = "サンプル表示中";
+        }
+
+        // 共通セットアップ処理
+        setupObject(object) {
+            if (this.currentModel) this.scene.remove(this.currentModel);
             this.neckBone = null;
 
             object.traverse(child => {
@@ -234,18 +271,14 @@
                     child.castShadow = true;
                     child.receiveShadow = true;
                     
-                    // 修正2：マテリアルをマット（つや消し）にする
                     if (child.material) {
                         const mats = Array.isArray(child.material) ? child.material : [child.material];
                         mats.forEach(m => {
                             m.shadowSide = THREE.DoubleSide;
-                            
-                            // テカリを抑える設定
-                            m.roughness = 1.0; // 粗さを最大に（光沢なし）
-                            m.metalness = 0.0; // 金属感をゼロに
-                            m.shininess = 0;   // PhongMaterial用
-                            m.specular = new THREE.Color(0x000000); // 反射光を黒（なし）に
-                            
+                            m.roughness = 1.0;
+                            m.metalness = 0.0;
+                            m.shininess = 0;
+                            m.specular = new THREE.Color(0x000000);
                             m.needsUpdate = true;
                         });
                     }
@@ -260,23 +293,21 @@
 
             this.currentModel = object;
 
-            // 修正1の続き：モデルの初期状態のサイズと中心を計算して保存
-            // まずスケールをリセットして純粋なサイズを測る
+            // 初期サイズ計算
             this.currentModel.scale.set(1, 1, 1);
             this.currentModel.position.set(0, 0, 0);
             this.currentModel.rotation.set(0, 0, 0);
             this.currentModel.updateMatrixWorld(true);
 
             const box = new THREE.Box3().setFromObject(this.currentModel);
-            box.getSize(this.baseSize); // 元のサイズ
-            box.getCenter(this.baseCenter); // 元の中心座標
-            this.baseScale = this.currentModel.scale.x; // 通常は1
+            box.getSize(this.baseSize);
+            box.getCenter(this.baseCenter);
+            this.baseScale = this.currentModel.scale.x;
 
-            this.updateTransform(); // ユーザー設定を反映
+            this.updateTransform();
             this.scene.add(object);
             
             const status = document.getElementById("status");
-            status.innerText = "モデル読込完了";
             status.style.color = "#00fff2";
         }
 
@@ -284,37 +315,15 @@
             if (!this.currentModel) return;
             const p = state.params;
 
-            // 修正1の続き：
-            // 毎回Box3を計算するのではなく、初期値(baseSize)を使って計算する
-            // これにより、計算結果がループして震える現象を防ぐ
-            
-            // 最大寸法を計算
             const maxDim = Math.max(this.baseSize.x, this.baseSize.y, this.baseSize.z);
-            
-            // ターゲットスケールの計算 (任意の係数 / 元のサイズ)
             const targetScale = p.scale / maxDim;
             this.currentModel.scale.setScalar(targetScale);
 
-            // 位置合わせ
-            // (元の中心 * スケール) 分だけずらして、原点に合わせる + ユーザー指定のオフセット
             this.currentModel.position.set(
                 -(this.baseCenter.x * targetScale) + p.posX,
-                -(boxYMin(this.currentModel) * targetScale) + p.posY, // 足元合わせ簡易計算
+                p.posY, // 中心合わせ優先
                 -40
             );
-
-            // ※足元の正確な位置合わせのため、簡易ヘルパー関数を利用
-            function boxYMin(obj) {
-                // ここだけは簡易Box計算してもスケール依存しないのでOKだが、
-                // 厳密には baseCenter.y - baseSize.y/2 を使うのが一番ブレない
-                return 0; // 多くのモデルは原点が足元にあるため0と仮定。
-                // モデルの原点が中心にある場合などは微調整が必要ですが、
-                // 今回は「ガクガク」防止優先のため、ユーザー入力のposYで調整してもらう設計にします。
-            }
-            
-            // より厳密なY合わせ（BaseBoxを使う場合）
-            const boxBottomY = this.baseCenter.y - (this.baseSize.y / 2);
-            this.currentModel.position.y = -(boxBottomY * targetScale) + p.posY;
         }
 
         updateHeadRotation(noseX, noseY) {
@@ -395,6 +404,7 @@
             if (label) label.innerText = value;
         }
         initFileUpload() {
+            // FBX Load
             const fileInput = document.getElementById('file-input');
             fileInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
@@ -402,6 +412,14 @@
                 const reader = new FileReader();
                 reader.onload = (evt) => app.modelManager.loadModel(evt.target.result);
                 reader.readAsArrayBuffer(file);
+            });
+
+            // Sample Button
+            const sampleBtn = document.getElementById('btn-sample');
+            sampleBtn.addEventListener('click', () => {
+                app.modelManager.loadSample();
+                // 完了時にファイル入力をリセット（見た目のため）
+                fileInput.value = '';
             });
         }
     }
@@ -426,7 +444,7 @@
             });
 
             this.faceTracker.init().then(() => {
-                document.getElementById("status").innerText = "トラッキング中";
+                document.getElementById("status").innerText = "Sampleボタンで開始";
                 this.animate();
             });
         }
